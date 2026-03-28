@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
@@ -7,6 +7,148 @@ const COLORS = ['#6366f1', '#8b5cf6', '#22d3ee', '#10b981', '#f59e0b', '#ef4444'
 
 function fmt(n) {
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// ─── Portfolio AI Analysis Engine ───
+function generatePortfolioAnalysis(enriched, totalValue, totalInvested, coinTargets) {
+  if (enriched.length === 0) return null
+
+  const totalPnL = totalValue - totalInvested
+  const pnlPct = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0
+
+  // Diversification score (Herfindahl-Hirschman Index based)
+  const allocations = enriched.map(h => h.allocation / 100)
+  const hhi = allocations.reduce((sum, a) => sum + a * a, 0)
+  const maxHhi = 1 // all in one coin
+  const minHhi = 1 / enriched.length // perfectly equal
+  const diversificationScore = enriched.length === 1 ? 10 :
+    Math.round(((maxHhi - hhi) / (maxHhi - minHhi)) * 100)
+
+  // Risk assessment
+  const avgVolatility = enriched.reduce((sum, h) => sum + Math.abs(h.change24h), 0) / enriched.length
+  const maxDrop = Math.min(...enriched.map(h => h.change24h))
+  const topHeavy = enriched[0]?.allocation > 60
+
+  let riskLevel, riskColor, riskIcon
+  if (avgVolatility > 8 || topHeavy) {
+    riskLevel = 'High Risk'; riskColor = '#ef4444'; riskIcon = '🔴'
+  } else if (avgVolatility > 4 || diversificationScore < 40) {
+    riskLevel = 'Medium Risk'; riskColor = '#f59e0b'; riskIcon = '🟡'
+  } else {
+    riskLevel = 'Low Risk'; riskColor = '#10b981'; riskIcon = '🟢'
+  }
+
+  // Market momentum (weighted by allocation)
+  const weightedChange24h = enriched.reduce((sum, h) => sum + (h.change24h * h.allocation / 100), 0)
+  let momentumLabel, momentumColor
+  if (weightedChange24h > 3) { momentumLabel = 'Strong Up'; momentumColor = '#10b981' }
+  else if (weightedChange24h > 0.5) { momentumLabel = 'Uptrend'; momentumColor = '#34d399' }
+  else if (weightedChange24h > -0.5) { momentumLabel = 'Sideways'; momentumColor = '#f59e0b' }
+  else if (weightedChange24h > -3) { momentumLabel = 'Downtrend'; momentumColor = '#f97316' }
+  else { momentumLabel = 'Strong Down'; momentumColor = '#ef4444' }
+
+  // Portfolio health score
+  let healthScore = 50
+  if (pnlPct > 20) healthScore += 15; else if (pnlPct > 5) healthScore += 8; else if (pnlPct < -20) healthScore -= 15; else if (pnlPct < -5) healthScore -= 8
+  healthScore += Math.round(diversificationScore * 0.2)
+  if (weightedChange24h > 2) healthScore += 8; else if (weightedChange24h < -2) healthScore -= 8
+  const profitableCoins = enriched.filter(h => h.pnl > 0).length
+  healthScore += Math.round((profitableCoins / enriched.length) * 15)
+  healthScore = Math.max(0, Math.min(100, healthScore))
+
+  let healthLabel, healthColor
+  if (healthScore >= 75) { healthLabel = 'Excellent'; healthColor = '#10b981' }
+  else if (healthScore >= 55) { healthLabel = 'Good'; healthColor = '#34d399' }
+  else if (healthScore >= 40) { healthLabel = 'Fair'; healthColor = '#f59e0b' }
+  else { healthLabel = 'Needs Attention'; healthColor = '#ef4444' }
+
+  // Generate insights
+  const insights = []
+
+  // Diversification insights
+  if (enriched.length === 1) {
+    insights.push({ icon: '⚠️', text: 'Single asset portfolio — consider diversifying to reduce risk', type: 'warning' })
+  } else if (topHeavy) {
+    insights.push({ icon: '📊', text: `${enriched[0].coin_symbol.toUpperCase()} is ${enriched[0].allocation.toFixed(0)}% of portfolio — heavy concentration`, type: 'warning' })
+  } else if (diversificationScore > 70) {
+    insights.push({ icon: '✅', text: 'Well diversified portfolio across multiple assets', type: 'positive' })
+  }
+
+  // P&L insights
+  if (pnlPct > 30) {
+    insights.push({ icon: '🎉', text: `Portfolio up ${pnlPct.toFixed(1)}% — consider taking partial profits`, type: 'positive' })
+  } else if (pnlPct < -20) {
+    insights.push({ icon: '💡', text: `Portfolio down ${Math.abs(pnlPct).toFixed(1)}% — could be a DCA opportunity`, type: 'info' })
+  }
+
+  // Momentum insights
+  const bigWinners = enriched.filter(h => h.change24h > 5)
+  const bigLosers = enriched.filter(h => h.change24h < -5)
+  if (bigWinners.length > 0) {
+    const names = bigWinners.map(h => h.coin_symbol.toUpperCase()).join(', ')
+    insights.push({ icon: '🚀', text: `${names} surging today — strong momentum`, type: 'positive' })
+  }
+  if (bigLosers.length > 0) {
+    const names = bigLosers.map(h => h.coin_symbol.toUpperCase()).join(', ')
+    insights.push({ icon: '📉', text: `${names} dropping today — watch for support levels`, type: 'warning' })
+  }
+
+  // Target insights
+  const targetsSet = enriched.filter(h => h.targetPrice)
+  const nearTarget = targetsSet.filter(h => h.targetPricePct >= 80 && h.targetPricePct < 100)
+  const hitTarget = targetsSet.filter(h => h.targetPricePct >= 100)
+  if (hitTarget.length > 0) {
+    insights.push({ icon: '🎯', text: `${hitTarget.map(h => h.coin_symbol.toUpperCase()).join(', ')} hit price target! Consider exit strategy`, type: 'positive' })
+  } else if (nearTarget.length > 0) {
+    insights.push({ icon: '🔔', text: `${nearTarget.map(h => h.coin_symbol.toUpperCase()).join(', ')} approaching price target (80%+)`, type: 'info' })
+  }
+
+  // Unrealized gains insight
+  const unrealizedGains = enriched.filter(h => h.pnlPct > 50)
+  if (unrealizedGains.length > 0) {
+    const names = unrealizedGains.map(h => `${h.coin_symbol.toUpperCase()} (+${h.pnlPct.toFixed(0)}%)`).join(', ')
+    insights.push({ icon: '💰', text: `Strong unrealized gains: ${names}`, type: 'positive' })
+  }
+
+  return {
+    diversificationScore, riskLevel, riskColor, riskIcon,
+    momentumLabel, momentumColor, weightedChange24h,
+    healthScore, healthLabel, healthColor,
+    insights: insights.slice(0, 4),
+    profitableCoins, totalCoins: enriched.length,
+    avgVolatility,
+  }
+}
+
+// ─── Price Alarm System ───
+function getAlarmState() {
+  try {
+    return JSON.parse(localStorage.getItem('crypto_tracker_alarm_state') || '{}')
+  } catch { return {} }
+}
+
+function setAlarmDismissed(coinId) {
+  const state = getAlarmState()
+  state[coinId] = { dismissed: true, time: Date.now() }
+  localStorage.setItem('crypto_tracker_alarm_state', JSON.stringify(state))
+}
+
+function clearAlarmDismissed(coinId) {
+  const state = getAlarmState()
+  delete state[coinId]
+  localStorage.setItem('crypto_tracker_alarm_state', JSON.stringify(state))
+}
+
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission()
+  }
+}
+
+function sendBrowserNotification(title, body, icon) {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, { body, icon, badge: icon })
+  }
 }
 
 export default function Dashboard() {
@@ -21,12 +163,76 @@ export default function Dashboard() {
   const [coinTargets, setCoinTargets] = useState({})
   const [editingTarget, setEditingTarget] = useState(null)
   const [targetInput, setTargetInput] = useState('')
+  const [alarms, setAlarms] = useState([])
+  const [showAnalysis, setShowAnalysis] = useState(true)
 
   useEffect(() => {
+    requestNotificationPermission()
     loadData()
     const interval = setInterval(refreshPrices, 60_000)
     return () => clearInterval(interval)
   }, [])
+
+  // Check for price target alarms
+  const checkAlarms = useCallback((portfolioData, priceData, targets) => {
+    const alarmState = getAlarmState()
+    const newAlarms = []
+
+    for (const h of portfolioData) {
+      const target = targets[h.coin_id]
+      const price = priceData[h.coin_id]?.usd
+      if (!target || !price) continue
+
+      const targetPrice = target.amount
+      const pct = (price / targetPrice) * 100
+
+      // Already dismissed and price hasn't dropped below 95% of target
+      if (alarmState[h.coin_id]?.dismissed && pct >= 95) continue
+
+      // Clear dismissed if price dropped significantly below target
+      if (alarmState[h.coin_id]?.dismissed && pct < 95) {
+        clearAlarmDismissed(h.coin_id)
+      }
+
+      if (pct >= 100) {
+        newAlarms.push({
+          coinId: h.coin_id,
+          symbol: h.coin_symbol.toUpperCase(),
+          image: h.coin_image,
+          price,
+          targetPrice,
+          pct,
+          type: 'hit',
+        })
+      } else if (pct >= 90) {
+        newAlarms.push({
+          coinId: h.coin_id,
+          symbol: h.coin_symbol.toUpperCase(),
+          image: h.coin_image,
+          price,
+          targetPrice,
+          pct,
+          type: 'near',
+        })
+      }
+    }
+
+    // Send browser notifications for new "hit" alarms
+    for (const alarm of newAlarms) {
+      if (alarm.type === 'hit' && !alarmState[alarm.coinId]?.notified) {
+        sendBrowserNotification(
+          `🎯 ${alarm.symbol} Target Hit!`,
+          `${alarm.symbol} reached $${fmt(alarm.price)} (target: $${fmt(alarm.targetPrice)})`,
+          coinImages[alarm.coinId] || ''
+        )
+        const state = getAlarmState()
+        state[alarm.coinId] = { ...state[alarm.coinId], notified: true, time: Date.now() }
+        localStorage.setItem('crypto_tracker_alarm_state', JSON.stringify(state))
+      }
+    }
+
+    setAlarms(newAlarms)
+  }, [coinImages])
 
   async function loadData() {
     setLoading(true)
@@ -40,6 +246,7 @@ export default function Dashboard() {
         const [pr, imgs] = await Promise.all([api.getPrices(ids), api.getCoinImages(ids)])
         setPrices(pr)
         setCoinImages(imgs)
+        checkAlarms(p, pr, ct)
       }
     } catch (err) { console.error(err) }
     setLoading(false)
@@ -50,6 +257,7 @@ export default function Dashboard() {
     const ids = portfolio.map(h => h.coin_id).join(',')
     const pr = await api.getPrices(ids)
     setPrices(pr)
+    checkAlarms(portfolio, pr, coinTargets)
   }
 
   async function handleCreateWallet(e) {
@@ -69,6 +277,7 @@ export default function Dashboard() {
     const val = parseFloat(targetInput)
     if (!val || val <= 0) return
     await api.setCoinTarget(coinId, val)
+    clearAlarmDismissed(coinId)
     setEditingTarget(null)
     setTargetInput('')
     loadData()
@@ -76,7 +285,13 @@ export default function Dashboard() {
 
   async function handleRemoveCoinTarget(coinId) {
     await api.removeCoinTarget(coinId)
+    clearAlarmDismissed(coinId)
     loadData()
+  }
+
+  function dismissAlarm(coinId) {
+    setAlarmDismissed(coinId)
+    setAlarms(prev => prev.filter(a => a.coinId !== coinId))
   }
 
   const totalValue = portfolio.reduce((sum, h) => sum + h.amount * (prices[h.coin_id]?.usd || 0), 0)
@@ -84,9 +299,6 @@ export default function Dashboard() {
   const totalPnL = totalValue - totalInvested
   const pnlPercent = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0
 
-  // Calculate projected portfolio value if all price targets are hit
-  // For coins with targets: value = holdings * target_price
-  // For coins without targets: value = current value
   const totalProjectedValue = enriched_raw => enriched_raw.reduce((sum, h) => {
     const target = coinTargets[h.coin_id]
     return sum + (target ? h.amount * target.amount : h.value)
@@ -102,7 +314,6 @@ export default function Dashboard() {
     const avgBuy = h.amount > 0 ? h.total_invested / h.amount : 0
     const image = coinImages[h.coin_id] || h.coin_image || ''
     const target = coinTargets[h.coin_id]
-    // target.amount is the target PRICE, not value
     const targetPrice = target ? target.amount : null
     const targetValue = target ? h.amount * target.amount : null
     const targetPricePct = target && price > 0 ? Math.min((price / target.amount) * 100, 100) : null
@@ -114,8 +325,51 @@ export default function Dashboard() {
 
   const chartData = enriched.filter(h => h.value > 0).map(h => ({ name: h.coin_symbol.toUpperCase(), value: h.value }))
 
+  // Portfolio AI Analysis
+  const analysis = generatePortfolioAnalysis(enriched, totalValue, totalInvested, coinTargets)
+
   return (
     <div className="page">
+      {/* ─── Price Target Alarms ─── */}
+      {alarms.length > 0 && (
+        <div className="alarm-container">
+          {alarms.map(alarm => (
+            <div key={alarm.coinId} className={`alarm-toast ${alarm.type}`}>
+              <div className="alarm-icon-wrap">
+                {alarm.type === 'hit' ? (
+                  <div className="alarm-ring">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                    </svg>
+                  </div>
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                )}
+              </div>
+              <div className="alarm-content">
+                <div className="alarm-title">
+                  {alarm.type === 'hit'
+                    ? `🎯 ${alarm.symbol} Target Hit!`
+                    : `⚡ ${alarm.symbol} Approaching Target`
+                  }
+                </div>
+                <div className="alarm-detail">
+                  Price: ${fmt(alarm.price)} / Target: ${fmt(alarm.targetPrice)} ({alarm.pct.toFixed(1)}%)
+                </div>
+              </div>
+              <button className="alarm-dismiss" onClick={() => dismissAlarm(alarm.coinId)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Hero card */}
       <div className="hero-card">
         <div className="hero-label">Total Portfolio Value</div>
@@ -127,7 +381,6 @@ export default function Dashboard() {
           <div className="hero-invested">Invested: ${fmt(totalInvested)}</div>
         </div>
 
-        {/* Projected value if all price targets hit */}
         {hasAnyTarget && (
           <div className="target-section">
             <div className="target-header">
@@ -164,6 +417,102 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* ─── Portfolio AI Analysis ─── */}
+      {analysis && (
+        <div className="portfolio-ai">
+          <div className="portfolio-ai-header" onClick={() => setShowAnalysis(!showAnalysis)}>
+            <div className="portfolio-ai-title">
+              <span className="ai-badge">AI</span>
+              <span>Portfolio Analysis</span>
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ transform: showAnalysis ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </div>
+
+          {showAnalysis && (
+            <div className="portfolio-ai-body">
+              {/* Score cards row */}
+              <div className="ai-score-cards">
+                <div className="ai-score-card">
+                  <div className="ai-score-ring" style={{ '--score': analysis.healthScore, '--color': analysis.healthColor }}>
+                    <svg viewBox="0 0 36 36">
+                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none" stroke="var(--bg4)" strokeWidth="3" />
+                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none" stroke={analysis.healthColor} strokeWidth="3"
+                        strokeDasharray={`${analysis.healthScore}, 100`}
+                        strokeLinecap="round" />
+                    </svg>
+                    <span className="ai-score-value">{analysis.healthScore}</span>
+                  </div>
+                  <span className="ai-score-label">Health</span>
+                  <span className="ai-score-desc" style={{ color: analysis.healthColor }}>{analysis.healthLabel}</span>
+                </div>
+
+                <div className="ai-score-card">
+                  <div className="ai-score-ring" style={{ '--score': analysis.diversificationScore, '--color': analysis.diversificationScore > 60 ? '#10b981' : analysis.diversificationScore > 30 ? '#f59e0b' : '#ef4444' }}>
+                    <svg viewBox="0 0 36 36">
+                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none" stroke="var(--bg4)" strokeWidth="3" />
+                      <path d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none" stroke={analysis.diversificationScore > 60 ? '#10b981' : analysis.diversificationScore > 30 ? '#f59e0b' : '#ef4444'} strokeWidth="3"
+                        strokeDasharray={`${analysis.diversificationScore}, 100`}
+                        strokeLinecap="round" />
+                    </svg>
+                    <span className="ai-score-value">{analysis.diversificationScore}</span>
+                  </div>
+                  <span className="ai-score-label">Diversity</span>
+                  <span className="ai-score-desc">{analysis.diversificationScore > 60 ? 'Good' : analysis.diversificationScore > 30 ? 'Fair' : 'Low'}</span>
+                </div>
+
+                <div className="ai-score-card">
+                  <div className="ai-info-block">
+                    <span className="ai-info-icon">{analysis.riskIcon}</span>
+                    <span className="ai-info-value" style={{ color: analysis.riskColor }}>{analysis.riskLevel}</span>
+                  </div>
+                  <span className="ai-score-label">Risk</span>
+                  <span className="ai-score-desc muted">{analysis.avgVolatility.toFixed(1)}% avg vol</span>
+                </div>
+
+                <div className="ai-score-card">
+                  <div className="ai-info-block">
+                    <span className="ai-info-value" style={{ color: analysis.momentumColor, fontSize: '1rem' }}>
+                      {analysis.weightedChange24h >= 0 ? '↑' : '↓'} {Math.abs(analysis.weightedChange24h).toFixed(2)}%
+                    </span>
+                  </div>
+                  <span className="ai-score-label">Momentum</span>
+                  <span className="ai-score-desc" style={{ color: analysis.momentumColor }}>{analysis.momentumLabel}</span>
+                </div>
+              </div>
+
+              {/* Win/loss ratio */}
+              <div className="ai-winloss">
+                <div className="ai-winloss-bar">
+                  <div className="ai-win-fill" style={{ width: `${(analysis.profitableCoins / analysis.totalCoins) * 100}%` }} />
+                </div>
+                <div className="ai-winloss-labels">
+                  <span className="positive">{analysis.profitableCoins} profitable</span>
+                  <span className="negative">{analysis.totalCoins - analysis.profitableCoins} losing</span>
+                </div>
+              </div>
+
+              {/* AI Insights */}
+              {analysis.insights.length > 0 && (
+                <div className="ai-insights">
+                  {analysis.insights.map((ins, i) => (
+                    <div key={i} className={`ai-insight ${ins.type}`}>
+                      <span className="ai-insight-icon">{ins.icon}</span>
+                      <span>{ins.text}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Quick actions */}
       <div className="quick-actions">

@@ -454,8 +454,101 @@ tr:last-child td { border-bottom: none; }
   50% { transform: scale(1.1); opacity: 1; }
 }
 
+/* ─── Price Target Alarms ─── */
+.alarm-container {
+  position: fixed; top: 1rem; right: 1rem; left: 1rem;
+  z-index: 200; display: flex; flex-direction: column; gap: 0.5rem;
+  pointer-events: none; max-width: 420px; margin-left: auto;
+}
+.alarm-toast {
+  display: flex; align-items: center; gap: 0.65rem;
+  padding: 0.75rem 1rem; border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  animation: alarmSlide 0.4s ease-out;
+  pointer-events: all; backdrop-filter: blur(12px);
+}
+.alarm-toast.hit {
+  background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(16,185,129,0.06));
+  border: 1.5px solid rgba(16,185,129,0.3);
+}
+.alarm-toast.near {
+  background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(245,158,11,0.06));
+  border: 1.5px solid rgba(245,158,11,0.3);
+}
+@keyframes alarmSlide {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.alarm-icon-wrap { flex-shrink: 0; }
+.alarm-ring {
+  animation: alarmRing 0.5s ease-in-out infinite alternate;
+  color: var(--green);
+}
+@keyframes alarmRing {
+  0% { transform: rotate(-8deg); }
+  100% { transform: rotate(8deg); }
+}
+.alarm-toast.near .alarm-icon-wrap { color: var(--orange); }
+.alarm-content { flex: 1; min-width: 0; }
+.alarm-title { font-size: 0.85rem; font-weight: 700; color: var(--text); }
+.alarm-detail { font-size: 0.72rem; color: var(--text2); margin-top: 0.1rem; }
+.alarm-dismiss {
+  flex-shrink: 0; background: none; border: none; color: var(--text2);
+  padding: 0.25rem; cursor: pointer; opacity: 0.5; transition: all 0.15s;
+}
+.alarm-dismiss:hover { opacity: 1; color: var(--text); background: none; }
+
+/* ─── Portfolio AI Analysis ─── */
+.portfolio-ai {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); margin-bottom: 1rem;
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.portfolio-ai-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.85rem 1rem; cursor: pointer;
+  background: linear-gradient(145deg, #f8f7ff, #eef2ff);
+  border-bottom: 1px solid rgba(99,102,241,0.08);
+}
+.portfolio-ai-header:hover { background: linear-gradient(145deg, #f0eeff, #e8edff); }
+.portfolio-ai-title { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; font-weight: 700; }
+.portfolio-ai-body { padding: 1rem; }
+
+/* Score cards */
+.ai-score-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.6rem; margin-bottom: 0.85rem; }
+.ai-score-card {
+  display: flex; flex-direction: column; align-items: center; gap: 0.2rem;
+  padding: 0.6rem 0.35rem; background: var(--bg); border-radius: 12px;
+  border: 1px solid var(--border);
+}
+.ai-score-ring {
+  width: 48px; height: 48px; position: relative;
+}
+.ai-score-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.ai-score-value {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 0.85rem; font-weight: 800; color: var(--text);
+}
+.ai-score-label { font-size: 0.65rem; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.04em; }
+.ai-score-desc { font-size: 0.7rem; font-weight: 700; }
+.ai-info-block { display: flex; flex-direction: column; align-items: center; gap: 0.1rem; height: 48px; justify-content: center; }
+.ai-info-icon { font-size: 1.1rem; }
+.ai-info-value { font-size: 0.78rem; font-weight: 700; }
+
+/* Win/loss bar */
+.ai-winloss { margin-bottom: 0.75rem; }
+.ai-winloss-bar { height: 8px; background: var(--red-bg); border-radius: 4px; overflow: hidden; }
+.ai-win-fill { height: 100%; background: var(--green); border-radius: 4px; transition: width 0.4s ease; }
+.ai-winloss-labels { display: flex; justify-content: space-between; margin-top: 0.25rem; font-size: 0.7rem; font-weight: 600; }
+
+/* Portfolio insights override for colored left border */
+.portfolio-ai .ai-insight.positive { border-left: 3px solid var(--green); }
+.portfolio-ai .ai-insight.warning { border-left: 3px solid var(--orange); }
+.portfolio-ai .ai-insight.info { border-left: 3px solid var(--accent); }
+
 /* ─── Mobile ─── */
 @media (max-width: 768px) {
+  .ai-score-cards { grid-template-columns: repeat(2, 1fr); }
   .sidebar { display: none; }
   .content { margin-left: 0; padding: 1rem 0.85rem 5.5rem; max-width: 100%; }
 
