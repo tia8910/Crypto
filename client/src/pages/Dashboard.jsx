@@ -252,11 +252,21 @@ export default function Dashboard() {
     if (!file) return
     const reader = new FileReader()
     reader.onload = (ev) => {
-      const result = api.importData(ev.target.result)
-      if (result.success) {
-        // Full page reload to reset all cached state
-        window.location.reload()
-      } else {
+      try {
+        const result = api.importData(ev.target.result)
+        if (result.success) {
+          // Verify data was written
+          const check = JSON.parse(localStorage.getItem('crypto_tracker_wallets') || '[]')
+          console.log('Import OK:', result.wallets, 'wallets,', result.transactions, 'transactions. Stored wallets:', check.length)
+          // Full page reload to reset all cached state
+          setTimeout(() => window.location.reload(), 100)
+        } else {
+          alert('Import failed: ' + (result.error || 'Unknown error'))
+          setImportStatus('error')
+          setTimeout(() => setImportStatus(null), 3000)
+        }
+      } catch (err) {
+        alert('Import error: ' + err.message)
         setImportStatus('error')
         setTimeout(() => setImportStatus(null), 3000)
       }
@@ -339,26 +349,30 @@ export default function Dashboard() {
   const enriched = portfolio.map(h => {
     const price = prices[h.coin_id]?.usd || 0
     const change24h = prices[h.coin_id]?.usd_24h_change || 0
-    const value = h.amount * price
-    const pnl = value - h.total_invested
-    const pnlPct = h.total_invested > 0 ? (pnl / h.total_invested) * 100 : 0
+    const amount = h.amount || 0
+    const invested = h.total_invested || 0
+    const value = amount * price
+    const pnl = value - invested
+    const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0
     const allocation = totalValue > 0 ? (value / totalValue) * 100 : 0
-    const avgBuy = h.amount > 0 ? h.total_invested / h.amount : 0
+    const avgBuy = amount > 0 ? invested / amount : 0
     const image = coinImages[h.coin_id] || h.coin_image || ''
+    const symbol = h.coin_symbol || h.coin_id || '??'
     const target = coinTargets[h.coin_id]
     const targetPrice = target ? target.amount : null
-    const targetValue = target ? h.amount * target.amount : null
+    const targetValue = target ? amount * target.amount : null
     const targetPricePct = target && price > 0 ? Math.min((price / target.amount) * 100, 100) : null
-    return { ...h, price, change24h, value, pnl, pnlPct, allocation, avgBuy, image, targetPrice, targetValue, targetPricePct }
+    return { ...h, coin_symbol: symbol, amount, total_invested: invested, price, change24h, value, pnl, pnlPct, allocation, avgBuy, image, targetPrice, targetValue, targetPricePct }
   }).sort((a, b) => b.value - a.value)
 
   const projectedTotal = totalProjectedValue(enriched)
   const hasAnyTarget = Object.keys(coinTargets).length > 0
 
-  const chartData = enriched.filter(h => h.value > 0).map(h => ({ name: h.coin_symbol.toUpperCase(), value: h.value }))
+  const chartData = enriched.filter(h => h.value > 0).map(h => ({ name: (h.coin_symbol || '??').toUpperCase(), value: h.value }))
 
   // Portfolio AI Analysis
-  const analysis = generatePortfolioAnalysis(enriched, totalValue, totalInvested, coinTargets)
+  let analysis = null
+  try { analysis = generatePortfolioAnalysis(enriched, totalValue, totalInvested, coinTargets) } catch (e) { console.error('Analysis error:', e) }
 
   return (
     <div className="page">

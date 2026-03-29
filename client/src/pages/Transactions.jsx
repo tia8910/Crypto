@@ -430,38 +430,42 @@ export default function Transactions({ showAdd, onCloseAdd }) {
         </div>
       ) : (
         <div className="tx-list">
-          {transactions.map(t => (
-            <div key={t.id} className="tx-card">
-              <div className="tx-left">
-                {t.coin_image ? (
-                  <img src={t.coin_image} alt="" width={36} height={36} className="tx-coin-img" />
-                ) : (
-                  <div className={`tx-type-icon ${t.type}`}>
-                    {t.type === 'buy' ? '+' : '-'}
-                  </div>
-                )}
-                <div className="tx-info">
-                  <div className="tx-title">
-                    <strong>{t.coin_symbol.toUpperCase()}</strong>
-                    <span className={`tx-badge ${t.type}`}>{t.type.toUpperCase()}</span>
-                  </div>
-                  <div className="tx-meta">
-                    {t.date} {t.exchange && `\u00B7 ${t.exchange}`}
+          {transactions.map(t => {
+            const sym = (t.coin_symbol || t.coin_id || '??').toUpperCase()
+            const txType = t.type || 'buy'
+            return (
+              <div key={t.id} className="tx-card">
+                <div className="tx-left">
+                  {t.coin_image ? (
+                    <img src={t.coin_image} alt="" width={36} height={36} className="tx-coin-img" />
+                  ) : (
+                    <div className={`tx-type-icon ${txType}`}>
+                      {txType === 'buy' ? '+' : '-'}
+                    </div>
+                  )}
+                  <div className="tx-info">
+                    <div className="tx-title">
+                      <strong>{sym}</strong>
+                      <span className={`tx-badge ${txType}`}>{txType.toUpperCase()}</span>
+                    </div>
+                    <div className="tx-meta">
+                      {t.date || ''} {t.exchange && `\u00B7 ${t.exchange}`}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="tx-right">
-                <div className="tx-amount">{t.amount} {t.coin_symbol.toUpperCase()}</div>
-                <div className="tx-cost muted">
-                  ${parseFloat(t.total_cost).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  <span> @ ${parseFloat(t.price_per_unit).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                <div className="tx-right">
+                  <div className="tx-amount">{t.amount || 0} {sym}</div>
+                  <div className="tx-cost muted">
+                    ${parseFloat(t.total_cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    <span> @ ${parseFloat(t.price_per_unit || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                  </div>
                 </div>
+                <button className="tx-delete" onClick={() => handleDelete(t.id)}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
               </div>
-              <button className="tx-delete" onClick={() => handleDelete(t.id)}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </button>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

@@ -318,21 +318,29 @@ export const api = {
   importData: (jsonString) => {
     try {
       const data = JSON.parse(jsonString);
-      if (!data.version) throw new Error('Invalid backup file');
-      // Always write arrays even if empty — use ?? to allow empty arrays
-      saveData('wallets', data.wallets ?? []);
-      saveData('transactions', data.transactions ?? []);
-      saveData('exchanges', data.exchanges ?? []);
-      localStorage.setItem('crypto_tracker_coin_targets', JSON.stringify(data.coin_targets ?? {}));
-      if (data.next_wallet_id) localStorage.setItem('crypto_tracker_next_wallet_id', data.next_wallet_id);
-      if (data.next_tx_id) localStorage.setItem('crypto_tracker_next_tx_id', data.next_tx_id);
-      if (data.next_ex_id) localStorage.setItem('crypto_tracker_next_ex_id', data.next_ex_id);
-      // Clear caches so fresh data loads
+      if (!data.wallets && !data.transactions) throw new Error('Invalid backup file — no wallets or transactions found');
+      // Write all data keys
+      const wallets = Array.isArray(data.wallets) ? data.wallets : [];
+      const transactions = Array.isArray(data.transactions) ? data.transactions : [];
+      const exchanges = Array.isArray(data.exchanges) ? data.exchanges : [];
+      const targets = (data.coin_targets && typeof data.coin_targets === 'object') ? data.coin_targets : {};
+      saveData('wallets', wallets);
+      saveData('transactions', transactions);
+      saveData('exchanges', exchanges);
+      localStorage.setItem('crypto_tracker_coin_targets', JSON.stringify(targets));
+      // Restore ID counters — compute max from data if not provided
+      const maxWalletId = wallets.reduce((m, w) => Math.max(m, w.id || 0), 0);
+      const maxTxId = transactions.reduce((m, t) => Math.max(m, t.id || 0), 0);
+      const maxExId = exchanges.reduce((m, e) => Math.max(m, e.id || 0), 0);
+      localStorage.setItem('crypto_tracker_next_wallet_id', String(Math.max(maxWalletId + 1, parseInt(data.next_wallet_id) || 1)));
+      localStorage.setItem('crypto_tracker_next_tx_id', String(Math.max(maxTxId + 1, parseInt(data.next_tx_id) || 1)));
+      localStorage.setItem('crypto_tracker_next_ex_id', String(Math.max(maxExId + 1, parseInt(data.next_ex_id) || 1)));
+      // Clear caches
       priceCache = {};
       lastPriceFetch = 0;
       coinImageCache = {};
       lastImageFetch = 0;
-      return { success: true };
+      return { success: true, wallets: wallets.length, transactions: transactions.length };
     } catch (err) {
       return { success: false, error: err.message };
     }
