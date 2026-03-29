@@ -319,13 +319,19 @@ export const api = {
     try {
       const data = JSON.parse(jsonString);
       if (!data.version) throw new Error('Invalid backup file');
-      if (data.wallets) saveData('wallets', data.wallets);
-      if (data.transactions) saveData('transactions', data.transactions);
-      if (data.exchanges) saveData('exchanges', data.exchanges);
-      if (data.coin_targets) localStorage.setItem('crypto_tracker_coin_targets', JSON.stringify(data.coin_targets));
+      // Always write arrays even if empty — use ?? to allow empty arrays
+      saveData('wallets', data.wallets ?? []);
+      saveData('transactions', data.transactions ?? []);
+      saveData('exchanges', data.exchanges ?? []);
+      localStorage.setItem('crypto_tracker_coin_targets', JSON.stringify(data.coin_targets ?? {}));
       if (data.next_wallet_id) localStorage.setItem('crypto_tracker_next_wallet_id', data.next_wallet_id);
       if (data.next_tx_id) localStorage.setItem('crypto_tracker_next_tx_id', data.next_tx_id);
       if (data.next_ex_id) localStorage.setItem('crypto_tracker_next_ex_id', data.next_ex_id);
+      // Clear caches so fresh data loads
+      priceCache = {};
+      lastPriceFetch = 0;
+      coinImageCache = {};
+      lastImageFetch = 0;
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };

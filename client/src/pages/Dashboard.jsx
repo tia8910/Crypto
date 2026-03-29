@@ -254,9 +254,8 @@ export default function Dashboard() {
     reader.onload = (ev) => {
       const result = api.importData(ev.target.result)
       if (result.success) {
-        setImportStatus('success')
-        loadData()
-        setTimeout(() => setImportStatus(null), 3000)
+        // Full page reload to reset all cached state
+        window.location.reload()
       } else {
         setImportStatus('error')
         setTimeout(() => setImportStatus(null), 3000)
