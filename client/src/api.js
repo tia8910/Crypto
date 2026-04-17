@@ -245,6 +245,33 @@ export const api = {
     }
   },
 
+  // Chart data for asset detail
+  getChartData: async (id, days = 7) => {
+    if (!id) return [];
+    try {
+      const res = await fetch(
+        `${COINGECKO_BASE}/coins/${id}/market_chart?vs_currency=usd&days=${days}`
+      );
+      const data = await res.json();
+      if (!data.prices) return [];
+      const step = Math.max(1, Math.floor(data.prices.length / 80));
+      return data.prices.filter((_, i) => i % step === 0).map(([ts, price]) => ({
+        date: new Date(ts).toLocaleDateString(),
+        time: new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        price,
+      }));
+    } catch (err) {
+      console.error('Chart data error:', err.message);
+      return [];
+    }
+  },
+
+  // Holdings for a specific coin (for sell quantity picker)
+  getHoldingsForCoin: async (coinId) => {
+    const portfolio = await api.getPortfolio();
+    return portfolio.find(h => h.coin_id === coinId) || null;
+  },
+
   getMarketData: async () => {
     try {
       const res = await fetch(
@@ -305,43 +332,48 @@ export const api = {
     return targets;
   },
 
-  // Import / Export
-  exportData: () => {
+  // Import / Export as shareable code
+  exportCode: () => {
     const data = {
-      wallets: loadData('wallets'),
-      transactions: loadData('transactions'),
-      exchanges: loadData('exchanges'),
-      coin_targets: (() => { try { return JSON.parse(localStorage.getItem('crypto_tracker_coin_targets') || '{}'); } catch { return {}; } })(),
-      next_wallet_id: localStorage.getItem('crypto_tracker_next_wallet_id') || '1',
-      next_tx_id: localStorage.getItem('crypto_tracker_next_tx_id') || '1',
-      next_ex_id: localStorage.getItem('crypto_tracker_next_ex_id') || '1',
-      exported_at: new Date().toISOString(),
-      version: 1,
+      w: loadData('wallets'),
+      t: loadData('transactions'),
+      e: loadData('exchanges'),
+      ct: (() => { try { return JSON.parse(localStorage.getItem('crypto_tracker_coin_targets') || '{}'); } catch { return {}; } })(),
+      ids: {
+        w: localStorage.getItem('crypto_tracker_next_wallet_id') || '1',
+        t: localStorage.getItem('crypto_tracker_next_tx_id') || '1',
+        e: localStorage.getItem('crypto_tracker_next_ex_id') || '1',
+      },
+      v: 2,
     };
-    return JSON.stringify(data, null, 2);
+    try {
+      return btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+    } catch (err) {
+      console.error('Export error:', err);
+      return null;
+    }
   },
 
-  importData: (jsonString) => {
+  importCode: (code) => {
     try {
+      const jsonString = decodeURIComponent(escape(atob(code.trim())));
       const data = JSON.parse(jsonString);
-      if (!data.wallets && !data.transactions) throw new Error('Invalid backup file — no wallets or transactions found');
-      // Write all data keys
-      const wallets = Array.isArray(data.wallets) ? data.wallets : [];
-      const transactions = Array.isArray(data.transactions) ? data.transactions : [];
-      const exchanges = Array.isArray(data.exchanges) ? data.exchanges : [];
-      const targets = (data.coin_targets && typeof data.coin_targets === 'object') ? data.coin_targets : {};
+      // Support both v1 (old JSON file) and v2 (code) formats
+      const wallets = Array.isArray(data.w || data.wallets) ? (data.w || data.wallets) : [];
+      const transactions = Array.isArray(data.t || data.transactions) ? (data.t || data.transactions) : [];
+      const exchanges = Array.isArray(data.e || data.exchanges) ? (data.e || data.exchanges) : [];
+      const targets = (data.ct || data.coin_targets || {});
       saveData('wallets', wallets);
       saveData('transactions', transactions);
       saveData('exchanges', exchanges);
       localStorage.setItem('crypto_tracker_coin_targets', JSON.stringify(targets));
-      // Restore ID counters — compute max from data if not provided
-      const maxWalletId = wallets.reduce((m, w) => Math.max(m, w.id || 0), 0);
-      const maxTxId = transactions.reduce((m, t) => Math.max(m, t.id || 0), 0);
-      const maxExId = exchanges.reduce((m, e) => Math.max(m, e.id || 0), 0);
-      localStorage.setItem('crypto_tracker_next_wallet_id', String(Math.max(maxWalletId + 1, parseInt(data.next_wallet_id) || 1)));
-      localStorage.setItem('crypto_tracker_next_tx_id', String(Math.max(maxTxId + 1, parseInt(data.next_tx_id) || 1)));
-      localStorage.setItem('crypto_tracker_next_ex_id', String(Math.max(maxExId + 1, parseInt(data.next_ex_id) || 1)));
-      // Clear caches
+      const ids = data.ids || {};
+      const maxWId = Math.max(wallets.reduce((m, w) => Math.max(m, w.id || 0), 0) + 1, parseInt(ids.w || data.next_wallet_id) || 1);
+      const maxTId = Math.max(transactions.reduce((m, t) => Math.max(m, t.id || 0), 0) + 1, parseInt(ids.t || data.next_tx_id) || 1);
+      const maxEId = Math.max(exchanges.reduce((m, e) => Math.max(m, e.id || 0), 0) + 1, parseInt(ids.e || data.next_ex_id) || 1);
+      localStorage.setItem('crypto_tracker_next_wallet_id', String(maxWId));
+      localStorage.setItem('crypto_tracker_next_tx_id', String(maxTId));
+      localStorage.setItem('crypto_tracker_next_ex_id', String(maxEId));
       priceCache = {};
       lastPriceFetch = 0;
       coinImageCache = {};

@@ -167,6 +167,8 @@ export default function Dashboard() {
   const [showAnalysis, setShowAnalysis] = useState(true)
   const [showDataPanel, setShowDataPanel] = useState(false)
   const [importStatus, setImportStatus] = useState(null)
+  const [exportCode, setExportCode] = useState('')
+  const [importCode, setImportCode] = useState('')
 
   useEffect(() => {
     requestNotificationPermission()
@@ -237,42 +239,23 @@ export default function Dashboard() {
   }, [coinImages])
 
   function handleExport() {
-    const json = api.exportData()
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `crypto-tracker-backup-${new Date().toISOString().split('T')[0]}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    const code = api.exportCode()
+    if (code) {
+      setExportCode(code)
+      setImportCode('')
+    }
   }
 
-  function handleImport(e) {
-    const file = e.target.files[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const result = api.importData(ev.target.result)
-        if (result.success) {
-          // Verify data was written
-          const check = JSON.parse(localStorage.getItem('crypto_tracker_wallets') || '[]')
-          console.log('Import OK:', result.wallets, 'wallets,', result.transactions, 'transactions. Stored wallets:', check.length)
-          // Full page reload to reset all cached state
-          setTimeout(() => window.location.reload(), 100)
-        } else {
-          alert('Import failed: ' + (result.error || 'Unknown error'))
-          setImportStatus('error')
-          setTimeout(() => setImportStatus(null), 3000)
-        }
-      } catch (err) {
-        alert('Import error: ' + err.message)
-        setImportStatus('error')
-        setTimeout(() => setImportStatus(null), 3000)
-      }
+  function handleImportCode() {
+    if (!importCode.trim()) return
+    const result = api.importCode(importCode.trim())
+    if (result.success) {
+      setTimeout(() => window.location.reload(), 100)
+    } else {
+      alert('Import failed: ' + (result.error || 'Invalid code'))
+      setImportStatus('error')
+      setTimeout(() => setImportStatus(null), 3000)
     }
-    reader.readAsText(file)
-    e.target.value = ''
   }
 
   async function loadData() {
@@ -611,24 +594,31 @@ export default function Dashboard() {
             Backup & Restore
           </h3>
           <p className="muted" style={{ fontSize: '0.8rem', marginBottom: '0.75rem' }}>
-            Export your data to transfer wallets, transactions, and targets to another browser or device.
+            Copy your backup code to transfer data, or paste a code to restore.
           </p>
           <div className="data-actions">
             <button className="data-export-btn" onClick={handleExport}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Export Backup
+              Get Backup Code
             </button>
-            <label className="data-import-btn">
+            <button className="data-import-btn" onClick={handleImportCode}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              Import Backup
-              <input type="file" accept=".json" onChange={handleImport} hidden />
-            </label>
+              Restore from Code
+            </button>
           </div>
-          {importStatus === 'success' && (
-            <div className="import-status success">Data imported successfully! Portfolio refreshed.</div>
+          {exportCode && (
+            <div className="code-block">
+              <label className="code-label">Your Backup Code</label>
+              <textarea className="code-textarea" readOnly value={exportCode} onClick={e => { e.target.select(); navigator.clipboard?.writeText(exportCode) }} />
+              <span className="code-hint">Tap to copy</span>
+            </div>
           )}
+          <div className="code-block">
+            <label className="code-label">Paste Code to Restore</label>
+            <textarea className="code-textarea" value={importCode} onChange={e => setImportCode(e.target.value)} placeholder="Paste your backup code here..." />
+          </div>
           {importStatus === 'error' && (
-            <div className="import-status error">Invalid backup file. Please select a valid export.</div>
+            <div className="import-status error">Invalid backup code. Please check and try again.</div>
           )}
         </div>
       )}
@@ -651,7 +641,7 @@ export default function Dashboard() {
       ) : (
         <div className="coin-cards">
           {enriched.map((h, i) => (
-            <div key={h.coin_id} className="coin-card">
+            <div key={h.coin_id} className="coin-card" onClick={() => navigate(`/asset/${h.coin_id}`)} style={{ cursor: 'pointer' }}>
               <div className="coin-header">
                 {h.image ? (
                   <img src={h.image} alt="" width={40} height={40} className="coin-logo" />

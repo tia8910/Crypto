@@ -86,6 +86,7 @@ export default function Transactions({ showAdd, onCloseAdd }) {
   const [fetchingPrice, setFetchingPrice] = useState(false)
   const [coinAnalysis, setCoinAnalysis] = useState(null)
   const [loadingAnalysis, setLoadingAnalysis] = useState(false)
+  const [sellHoldings, setSellHoldings] = useState(null)
   const [form, setForm] = useState({
     wallet_id: '', type: 'buy', coin_id: '', coin_symbol: '', amount: '', price_per_unit: '', exchange: '', notes: '', date: new Date().toISOString().split('T')[0],
   })
@@ -97,6 +98,24 @@ export default function Transactions({ showAdd, onCloseAdd }) {
     if (location.state?.openAdd) {
       setShowForm(true)
       if (location.state?.type) setForm(f => ({ ...f, type: location.state.type }))
+      if (location.state?.prefillCoin) {
+        const { prefillCoin, prefillSymbol, prefillName, prefillImage } = location.state
+        setForm(f => ({ ...f, coin_id: prefillCoin, coin_symbol: prefillSymbol || '', coin_image: prefillImage || '' }))
+        setCoinSearch(`${prefillName || prefillSymbol || prefillCoin} (${(prefillSymbol || '').toUpperCase()})`)
+        Promise.all([
+          api.getPrices(prefillCoin),
+          api.getCoinDetail(prefillCoin),
+          api.getHoldingsForCoin(prefillCoin),
+        ]).then(([priceData, detail, holdings]) => {
+          const price = priceData[prefillCoin]?.usd
+          if (price) setForm(f => ({ ...f, price_per_unit: String(price) }))
+          if (detail) setCoinAnalysis(generateAnalysis(detail, location.state?.type || 'buy'))
+          if (holdings) setSellHoldings(holdings)
+        })
+      }
+      if (location.state?.holdings) {
+        setSellHoldings({ amount: location.state.holdings, coin_symbol: location.state.prefillSymbol || '' })
+      }
       window.history.replaceState({}, '')
     }
   }, [location.state])
@@ -128,14 +147,15 @@ export default function Transactions({ showAdd, onCloseAdd }) {
     setCoinSearch(`${coin.name} (${coin.symbol.toUpperCase()})`)
     setCoinResults([])
     setCoinAnalysis(null)
+    setSellHoldings(null)
 
-    // Auto-fetch market price and analysis
     setFetchingPrice(true)
     setLoadingAnalysis(true)
     try {
-      const [priceData, detail] = await Promise.all([
+      const [priceData, detail, holdings] = await Promise.all([
         api.getPrices(coin.id),
         api.getCoinDetail(coin.id),
+        api.getHoldingsForCoin(coin.id),
       ])
       const livePrice = priceData[coin.id]?.usd
       if (livePrice) {
@@ -143,6 +163,9 @@ export default function Transactions({ showAdd, onCloseAdd }) {
       }
       if (detail) {
         setCoinAnalysis(generateAnalysis(detail, form.type))
+      }
+      if (holdings) {
+        setSellHoldings(holdings)
       }
     } catch (err) { console.error(err) }
     setFetchingPrice(false)
@@ -190,6 +213,7 @@ export default function Transactions({ showAdd, onCloseAdd }) {
     setForm({ wallet_id: form.wallet_id, type: 'buy', coin_id: '', coin_symbol: '', coin_image: '', amount: '', price_per_unit: '', exchange: '', notes: '', date: new Date().toISOString().split('T')[0] })
     setCoinSearch('')
     setCoinAnalysis(null)
+    setSellHoldings(null)
     setShowForm(false)
     loadData()
   }
@@ -337,6 +361,25 @@ export default function Transactions({ showAdd, onCloseAdd }) {
                         <span className="ai-insight-icon">{ins.icon}</span>
                         <span>{ins.text}</span>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(form.type === 'sell' || form.type === 'withdraw') && form.coin_id && sellHoldings && (
+                <div className="sell-picker">
+                  <div className="sell-balance-row">
+                    <span className="sell-balance-label">Available Balance</span>
+                    <span className="sell-balance-value">{sellHoldings.amount.toFixed(6)} {(form.coin_symbol || '').toUpperCase()}</span>
+                  </div>
+                  <div className="sell-pct-btns">
+                    {[25, 50, 75, 100].map(pct => (
+                      <button key={pct} type="button" className="sell-pct-btn" onClick={() => {
+                        const amt = sellHoldings.amount * pct / 100
+                        setForm(f => ({ ...f, amount: String(amt) }))
+                      }}>
+                        {pct}%
+                      </button>
                     ))}
                   </div>
                 </div>
